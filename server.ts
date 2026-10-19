@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url';
 import { GoogleGenAI, Type } from '@google/genai';
 import { EpisodeRunningState } from './src/types';
 
+dotenv.config({ path: '.env.local' });
 dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
@@ -30,8 +31,8 @@ function getErrorMessage(error: unknown): string {
   return String(error);
 }
 
-// Fallback Model Cascade: try modern 3.8-flash, then 3.1-flash-lite, then flash-latest
-const CANDIDATE_MODELS = ['gemini-3.8-flash', 'gemini-3.1-flash-lite', 'gemini-flash-latest'];
+// Recovery cascade prioritizes low-cost Flash-Lite models.
+const CANDIDATE_MODELS = ['gemini-2.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-2.5-flash'];
 
 /**
  * Exponential backoff wrapper for resilient Gemini API calls
@@ -70,9 +71,13 @@ async function callGeminiWithBackoff(model: string, params: any, maxRetries = 3)
 /**
  * Executes content generation across model cascade with backoff, falling back safely
  */
-async function generateWithModelFallback(params: any): Promise<{ text: string; modelUsed: string }> {
+async function generateWithModelFallback(
+  params: any,
+  preferredModel = CANDIDATE_MODELS[0]
+): Promise<{ text: string; modelUsed: string }> {
   let lastError: any = null;
-  for (const model of CANDIDATE_MODELS) {
+  const models = [preferredModel, ...CANDIDATE_MODELS.filter((model) => model !== preferredModel)];
+  for (const model of models) {
     try {
       const response = await callGeminiWithBackoff(model, params, 3);
       if (response && response.text) {
@@ -140,13 +145,6 @@ function calculateMetricsHeuristics(
   let rem = recommended % epCount;
   let curPage = 1;
 
-  const dramaticEpisodeTitles = [
-    'Act I - The Gathering Storm',
-    'Act II - The Unfolding Mystery',
-    'Act III - The Crucible of Shadows',
-    'Act IV - The Climax & Resolution',
-  ];
-
   const episodes = Array.from({ length: epCount }).map((_, i) => {
     const pCount = basePages + (rem > 0 ? 1 : 0);
     if (rem > 0) rem--;
@@ -157,7 +155,7 @@ function calculateMetricsHeuristics(
 
     return {
       episodeIndex: i + 1,
-      title: `Episode ${i + 1}: ${dramaticEpisodeTitles[i] || `Act ${i + 1} - The Gathering Storm`}`,
+      title: `Episode ${i + 1}: Act ${i + 1} - The Gathering Storm`,
       subtitle: `Broadcast Episode ${i + 1}`,
       targetRuntimeMinutes: Math.round(pCount * 1.25),
       pageStart: pStart,
@@ -873,7 +871,7 @@ Return valid JSON adhering strictly to the schema.`;
           ],
         },
       },
-    });
+    }, 'gemini-2.5-flash-lite');
 
     const parsed = JSON.parse(resultText || '{}');
     if (!parsed.recommendedTotalPages || !parsed.recommendedEpisodes || !Array.isArray(parsed.recommendedEpisodes)) {
@@ -1014,7 +1012,7 @@ Return strictly a valid JSON object matching the requested schema.`;
           required: ['title', 'logline', 'characters', 'episodes', 'pages', 'sfxPalette'],
         },
       },
-    });
+    }, 'gemini-2.5-flash');
 
     const parsed = JSON.parse(resultText || '{}');
     if (!parsed.pages || !Array.isArray(parsed.pages) || parsed.pages.length === 0) {
@@ -1151,7 +1149,7 @@ Return JSON adhering to the schema.`;
           required: ['rawScript', 'lines', 'pageSummary', 'estimatedDurationSec'],
         },
       },
-    });
+    }, 'gemini-2.5-flash');
 
     const parsed = JSON.parse(resultText || '{}');
     if (!parsed.lines || !Array.isArray(parsed.lines) || parsed.lines.length === 0 || !parsed.rawScript) {
@@ -1234,7 +1232,7 @@ Return a JSON object with: rawScript, lines, notes.`;
           required: ['rawScript', 'lines', 'notes'],
         },
       },
-    });
+    }, 'gemini-2.5-flash-lite');
 
     const parsed = JSON.parse(resultText || '{}');
     return res.json(parsed);

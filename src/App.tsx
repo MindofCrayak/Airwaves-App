@@ -218,9 +218,9 @@ export default function App() {
     setIsCalculatingMetrics(true);
     setErrorMessage(null);
     try {
-      if (payload.text) setSourceText(payload.text);
+      setSourceText(payload.text || '');
       if (payload.fileName) setSourceFileName(payload.fileName);
-      if (payload.pdfBase64) setSourcePdfBase64(payload.pdfBase64);
+      setSourcePdfBase64(payload.pdfBase64 || null);
       setCurrentSettings(payload.settings);
 
       const res = await fetch('/api/calculate-source-metrics', {

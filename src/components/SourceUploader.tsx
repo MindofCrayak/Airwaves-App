@@ -38,10 +38,10 @@ export const SourceUploader: React.FC<SourceUploaderProps> = ({
   isLoading,
 }) => {
   const [sourceText, setSourceText] = useState('');
-  const [pdfBase64, setPdfBase64] = useState<string | null>(null);
   const [fileName, setFileName] = useState<string | null>(null);
   const [dragActive, setDragActive] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [isReadingFile, setIsReadingFile] = useState(false);
 
   const [settings, setSettings] = useState<AdaptationSettings>({
     stylePreset: 'classic_otr',
@@ -59,7 +59,6 @@ export const SourceUploader: React.FC<SourceUploaderProps> = ({
 
   const handleSelectSample = (sample: SampleSource) => {
     setSourceText(sample.text);
-    setPdfBase64(null);
     setFileName(`${sample.title} (${sample.author})`);
     setSettings((prev) => ({
       ...prev,
@@ -72,29 +71,22 @@ export const SourceUploader: React.FC<SourceUploaderProps> = ({
   const handleFile = async (file: File) => {
     setErrorMsg(null);
     setFileName(file.name);
+    setSourceText('');
+    setIsReadingFile(true);
 
-    if (file.type === 'application/pdf' || file.name.endsWith('.pdf')) {
-      const reader = new FileReader();
-      reader.onload = () => {
-        const result = reader.result as string;
-        const base64 = result.includes(',') ? result.split(',')[1] : result;
-        setPdfBase64(base64);
-        setSourceText('');
-      };
-      reader.onerror = () => {
-        setErrorMsg('Failed to read PDF file. Please try a text file or copy-paste.');
-      };
-      reader.readAsDataURL(file);
-    } else {
-      const reader = new FileReader();
-      reader.onload = () => {
-        setSourceText(reader.result as string);
-        setPdfBase64(null);
-      };
-      reader.onerror = () => {
-        setErrorMsg('Failed to read file text.');
-      };
-      reader.readAsText(file);
+    try {
+      let text: string;
+      if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
+        const { extractTextFromPdf } = await import('../utils/pdfExtractor');
+        text = await extractTextFromPdf(file);
+      } else {
+        text = await file.text();
+      }
+      setSourceText(text);
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : 'Failed to read source file.');
+    } finally {
+      setIsReadingFile(false);
     }
   };
 
@@ -108,7 +100,7 @@ export const SourceUploader: React.FC<SourceUploaderProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!sourceText.trim() && !pdfBase64) {
+    if (!sourceText.trim()) {
       setErrorMsg('Please upload a book/source, paste text, or select one of the classic samples.');
       return;
     }
@@ -116,7 +108,6 @@ export const SourceUploader: React.FC<SourceUploaderProps> = ({
     try {
       await onCalculateMetrics({
         text: sourceText,
-        pdfBase64: pdfBase64 || undefined,
         fileName: fileName || undefined,
         settings,
       });
@@ -337,7 +328,6 @@ export const SourceUploader: React.FC<SourceUploaderProps> = ({
               value={sourceText}
               onChange={(e) => {
                 setSourceText(e.target.value);
-                setPdfBase64(null);
               }}
               placeholder="Or paste your source text, dialogue scene, or book chapter here..."
               rows={5}
@@ -345,7 +335,7 @@ export const SourceUploader: React.FC<SourceUploaderProps> = ({
             />
             <div className="flex items-center justify-between text-xs text-zinc-500 mt-2 px-1">
               <span>
-                {pdfBase64 ? 'PDF document attached for analysis' : `${wordCount.toLocaleString()} words loaded`}
+                {isReadingFile ? 'Extracting source text…' : `${wordCount.toLocaleString()} words loaded`}
               </span>
               {sourceText && (
                 <button
@@ -526,7 +516,7 @@ export const SourceUploader: React.FC<SourceUploaderProps> = ({
 
           <button
             type="submit"
-            disabled={isLoading || (!sourceText.trim() && !pdfBase64)}
+            disabled={isLoading || isReadingFile || !sourceText.trim()}
             className="w-full sm:w-auto px-8 py-3.5 rounded-xl bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-800 text-zinc-950 disabled:text-zinc-500 font-bold text-sm tracking-wide shadow-xl shadow-amber-500/20 transition-all flex items-center justify-center gap-2 disabled:cursor-not-allowed group cursor-pointer"
           >
             {isLoading ? (
