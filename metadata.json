@@ -1,0 +1,6 @@
+{
+  "name": "Airwaves - Radio Drama Script Generator",
+  "description": "Transform books and stories into professional, broadcast-ready radio drama scripts page-by-page with authentic sound cues and audio preview.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
